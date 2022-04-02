@@ -16,6 +16,7 @@ import seaborn as sns
 import shap
 import os
 import re
+from sklearn.model_selection import GroupShuffleSplit
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -206,22 +207,27 @@ class BorutaShap:
 
         if self.train_or_test.lower() == 'test':
             # keeping the same naming convenetion as to not add complexit later on
-            self.X_boruta_train, self.X_boruta_test, self.y_train, self.y_test, self.w_train, self.w_test = train_test_split(self.X_boruta,
+            self.X_boruta_train, self.X_boruta_test, self.y_train, self.y_test, self.w_train, self.w_test = self.train_test_split_groups(self.X_boruta,
                                                                                                                                 self.y,
-                                                                                                                                self.sample_weight,
+                                                                                                                                self.groups,
                                                                                                                                 test_size=0.3,
-                                                                                                                                random_state=self.random_state,
-                                                                                                                                stratify=self.stratify)
+                                                                                                                                random_state=self.random_state)
             self.Train_model(self.X_boruta_train, self.y_train, sample_weight = self.w_train)
 
         elif self.train_or_test.lower() == 'train':
             # model will be trained and evaluated on the same data
             self.Train_model(self.X_boruta, self.y, sample_weight = self.sample_weight)
+            self.X_boruta_test = self.X_boruta
 
         else:
             raise ValueError('The train_or_test parameter can only be "train" or "test"')
 
-
+    def train_test_split_groups(self, X, y, groups, test_size=0.3, random_state=42):
+        gss = GroupShuffleSplit(n_splits=1, test_size=test_size)
+        train_idx, test_idx = next(gss.split(X, y, groups))
+        train_idx = X.index[train_idx]
+        test_idx = X.index[test_idx]
+        return X.loc[train_idx], X.loc[test_idx], y.loc[train_idx], y.loc[test_idx], None, None
 
     def Train_model(self, X, y, sample_weight = None):
 
@@ -260,7 +266,7 @@ class BorutaShap:
 
 
 
-    def fit(self, X, y, sample_weight = None, n_trials = 20, random_state=0, sample=False,
+    def fit(self, X, y, groups, sample_weight = None, n_trials = 20, random_state=0, sample=False,
             train_or_test = 'test', normalize=True, verbose=True, stratify=None):
 
         """
@@ -335,6 +341,7 @@ class BorutaShap:
         self.starting_X = X.copy()
         self.X = X.copy()
         self.y = y.copy()
+        self.groups = groups.copy()
         self.sample_weight = sample_weight.copy()
         self.n_trials = n_trials
         self.random_state = random_state
@@ -708,9 +715,7 @@ class BorutaShap:
         """
 
 
-        explainer = shap.TreeExplainer(self.model, 
-                                       feature_perturbation = "tree_path_dependent",
-                                       approximate = True)
+        explainer = shap.TreeExplainer(self.model, feature_perturbation = "tree_path_dependent")
 
 
         if self.sample:
@@ -760,7 +765,7 @@ class BorutaShap:
                     self.shap_values = np.abs(self.shap_values).mean(0)
 
             else:
-                self.shap_values = explainer.shap_values(self.X_boruta)
+                self.shap_values = explainer.shap_values(self.X_boruta_test)
                 self.shap_values = np.abs(self.shap_values).mean(0)
 
 
